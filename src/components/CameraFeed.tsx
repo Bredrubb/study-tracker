@@ -146,6 +146,58 @@ export function CameraFeed({
         ctx.fillText(label, dispX + 4, y + 13);
       });
 
+    // ── Hand skeletons ────────────────────────────────────────────────
+    const HAND_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4],       // thumb
+      [0,5],[5,6],[6,7],[7,8],       // index
+      [0,9],[9,10],[10,11],[11,12],  // middle
+      [0,13],[13,14],[14,15],[15,16],// ring
+      [0,17],[17,18],[18,19],[19,20],// pinky
+      [5,9],[9,13],[13,17],          // palm
+    ];
+    const FINGERTIP_IDX = new Set([4, 8, 12, 16, 20]);
+
+    detectionResult.hands.forEach(hand => {
+      const kp = hand.keypoints;
+      const handColor = hand.gripDetected ? 'rgba(239,68,68,0.9)' : 'rgba(139,92,246,0.9)';
+
+      // Bones
+      ctx.strokeStyle = handColor;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 0;
+      HAND_CONNECTIONS.forEach(([a, b]) => {
+        const pa = kp[a];
+        const pb = kp[b];
+        if (!pa || !pb) return;
+        ctx.beginPath();
+        ctx.moveTo(mx(pa.x), pa.y);
+        ctx.lineTo(mx(pb.x), pb.y);
+        ctx.stroke();
+      });
+
+      // Joints
+      kp.forEach((pt, i) => {
+        if (!pt) return;
+        const isTip = FINGERTIP_IDX.has(i);
+        ctx.beginPath();
+        ctx.arc(mx(pt.x), pt.y, isTip ? 5 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = isTip ? handColor : 'rgba(255,255,255,0.8)';
+        ctx.fill();
+      });
+
+      // Label above wrist
+      const wrist = kp[0];
+      if (wrist) {
+        const label = hand.gripDetected ? `✋ Grip (${hand.handedness})` : `🖐 ${hand.handedness}`;
+        ctx.font = 'bold 11px system-ui, sans-serif';
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = handColor;
+        ctx.fillRect(mx(wrist.x) - tw / 2 - 4, wrist.y - 22, tw + 8, 18);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, mx(wrist.x) - tw / 2, wrist.y - 8);
+      }
+    });
+
     // ── "No face" indicator ──────────────────────────────────────────
     if (modelsReady && detectionResult.faces.length === 0) {
       ctx.strokeStyle = 'rgba(245, 158, 11, 0.7)';
@@ -169,7 +221,7 @@ export function CameraFeed({
       position: 'fixed',
       bottom: '5.5rem',
       right: '1.25rem',
-      width: '220px',
+      width: '340px',
       borderRadius: '0.875rem',
       overflow: 'hidden',
       border: `2px solid ${isVisible ? borderColor : '#1e1e2e'}`,

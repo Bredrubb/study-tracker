@@ -33,6 +33,8 @@ export function ActiveSession({ duration, cameraEnabled, settings, onSessionEnd 
   const sessionEndedRef = useRef(false);
   const phoneAlertCooldownRef = useRef(false);
   const faceAlertCooldownRef = useRef(false);
+  const faceAbsentSinceRef = useRef<number | null>(null);
+  const faceAbsentPenaltyRef = useRef(false);
 
   const { startMonitoring, stopMonitoring } = useTabMonitoring(
     useCallback(() => {
@@ -88,10 +90,34 @@ export function ActiveSession({ duration, cameraEnabled, settings, onSessionEnd 
               }
             },
             (faceIsPresent: boolean) => {
-              if (!faceIsPresent && !faceAlertCooldownRef.current) {
-                faceAlertCooldownRef.current = true;
-                addToast('⚠️ No face detected — are you still there?', 'warning');
-                setTimeout(() => { faceAlertCooldownRef.current = false; }, 10000);
+              if (faceIsPresent) {
+                // Face returned — reset absence tracking
+                faceAbsentSinceRef.current = null;
+                faceAbsentPenaltyRef.current = false;
+              } else {
+                // Start absence timer on first miss
+                if (faceAbsentSinceRef.current === null) {
+                  faceAbsentSinceRef.current = Date.now();
+                }
+                // Warn once per absence episode
+                if (!faceAlertCooldownRef.current) {
+                  faceAlertCooldownRef.current = true;
+                  addToast('⚠️ No face detected — are you still there?', 'warning');
+                  setTimeout(() => { faceAlertCooldownRef.current = false; }, 10000);
+                }
+                // Apply 10% penalty after 10 continuous seconds absent
+                const absentMs = Date.now() - (faceAbsentSinceRef.current ?? Date.now());
+                if (absentMs >= 10_000 && !faceAbsentPenaltyRef.current) {
+                  faceAbsentPenaltyRef.current = true;
+                  addToast('❌ Left frame for 10s — -10% penalty', 'error');
+                  distractionsRef.current.push({
+                    id: uid(),
+                    type: 'face_absent',
+                    timestamp: Date.now(),
+                    penalty: getPenalty('face_absent'),
+                    message: 'Left camera frame for 10+ seconds',
+                  });
+                }
               }
             },
           );

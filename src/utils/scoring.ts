@@ -4,6 +4,7 @@ const PENALTIES: Record<string, number> = {
   tab_switch: 0.05,
   phone_detected: 0.03,
   camera_opted_out: 0.10,
+  face_absent: 0.10,
 };
 
 export function calculateScore(
@@ -17,7 +18,7 @@ export function calculateScore(
 } {
   const durationMinutes = durationSeconds / 60;
 
-  const penaltyBreakdown = { tab_switch: 0, phone_detected: 0, camera_opted_out: 0 };
+  const penaltyBreakdown = { tab_switch: 0, phone_detected: 0, camera_opted_out: 0, face_absent: 0 };
   let totalPenalty = 0;
 
   for (const d of distractions) {

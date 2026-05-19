@@ -1,6 +1,6 @@
 export type AppView = 'landing' | 'session' | 'summary' | 'history' | 'settings';
 
-export type DistractionType = 'tab_switch' | 'phone_detected' | 'camera_opted_out';
+export type DistractionType = 'tab_switch' | 'phone_detected' | 'camera_opted_out' | 'face_absent';
 
 export interface DistractionEvent {
   id: string;
@@ -24,6 +24,7 @@ export interface SessionData {
     tab_switch: number;
     phone_detected: number;
     camera_opted_out: number;
+    face_absent: number;
   };
 }
 

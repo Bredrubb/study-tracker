@@ -13,23 +13,42 @@ export interface ObjectPrediction {
   bbox: [number, number, number, number];
 }
 
+export interface HandKeypoint {
+  x: number;
+  y: number;
+  z?: number;
+  name?: string;
+  score?: number;
+}
+
+export interface HandPrediction {
+  keypoints: HandKeypoint[];
+  handedness: 'Left' | 'Right';
+  score?: number;
+  gripDetected?: boolean;
+}
+
 export interface DetectionResult {
   faces: FacePrediction[];
   objects: ObjectPrediction[];
+  hands: HandPrediction[];
 }
 
 type CocoModel = { detect: (img: HTMLVideoElement) => Promise<ObjectPrediction[]> };
-type FaceModel = { estimateFaces: (img: HTMLVideoElement, returnTensors: boolean) => Promise<unknown[]> };
+
+// MediaPipe model refs typed loosely — we cast from dynamic imports
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MPModel = any;
 
 export function useCamera() {
   const videoRef    = useRef<HTMLVideoElement>(null);
   const streamRef   = useRef<MediaStream | null>(null);
   const cocoRef     = useRef<CocoModel | null>(null);
-  const faceRef     = useRef<FaceModel | null>(null);
+  const faceRef     = useRef<MPModel>(null);
+  const handRef     = useRef<MPModel>(null);
   const intervalRef = useRef<number | null>(null);
   const loadingRef  = useRef(false);
 
-  // stream as state so CameraFeed re-renders and its useEffect fires when it arrives
   const [stream,          setStream]          = useState<MediaStream | null>(null);
   const [permission,      setPermission]      = useState<'idle' | 'granted' | 'denied'>('idle');
   const [modelsLoading,   setModelsLoading]   = useState(false);
@@ -40,7 +59,6 @@ export function useCamera() {
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
 
   const requestCamera = useCallback(async (): Promise<boolean> => {
-    // Re-use existing stream (handles StrictMode double-invoke)
     if (streamRef.current) {
       setStream(streamRef.current);
       setPermission('granted');
@@ -51,7 +69,7 @@ export function useCamera() {
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
       streamRef.current = s;
-      setStream(s);        // triggers CameraFeed to attach via its own useEffect
+      setStream(s);
       setPermission('granted');
       return true;
     } catch (err) {
@@ -67,18 +85,47 @@ export function useCamera() {
     setModelsLoading(true);
     setLoadError(false);
     try {
-      const [tf, cocoSsd, blazeface] = await Promise.all([
+      // COCO-SSD for phone detection (TF.js — well-tested, has 'cell phone' class)
+      const [tf, cocoSsd] = await Promise.all([
         import('@tensorflow/tfjs'),
         import('@tensorflow-models/coco-ssd'),
-        import('@tensorflow-models/blazeface'),
       ]);
       await tf.ready();
-      const [coco, face] = await Promise.all([
-        cocoSsd.load(),
-        blazeface.load(),
+      cocoRef.current = await cocoSsd.load() as unknown as CocoModel;
+      console.log('[FocusFlow] COCO-SSD loaded');
+
+      // MediaPipe Tasks Vision — face + hand detection
+      const { FaceDetector, HandLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+      );
+
+      const [faceDetector, handLandmarker] = await Promise.all([
+        FaceDetector.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          minDetectionConfidence: 0.5,
+        }),
+        HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          numHands: 2,
+          minHandDetectionConfidence: 0.5,
+          minHandPresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        }),
       ]);
-      cocoRef.current = coco as unknown as CocoModel;
-      faceRef.current  = face as unknown as FaceModel;
+
+      faceRef.current = faceDetector;
+      handRef.current = handLandmarker;
+      console.log('[FocusFlow] MediaPipe face + hand loaded');
+
       setModelsReady(true);
       setModelsLoading(false);
       loadingRef.current = false;
@@ -98,23 +145,76 @@ export function useCamera() {
   ) => {
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
-    if (!cocoRef.current || !faceRef.current) return;
+    if (!cocoRef.current) return;
+
+    const vw = video.videoWidth  || 640;
+    const vh = video.videoHeight || 480;
+    const ts = performance.now(); // monotonically increasing — required by VIDEO mode
+
     try {
-      const rawFaces = await faceRef.current.estimateFaces(video, false);
-      const faces    = (rawFaces as FacePrediction[]).filter(f => f?.topLeft && f?.bottomRight);
-      const hasFace  = faces.length > 0;
+      // Run all three in parallel
+      const [objects, faceResult, handResult] = await Promise.all([
+        cocoRef.current.detect(video),
+        faceRef.current  ? Promise.resolve(faceRef.current.detectForVideo(video, ts))  : Promise.resolve(null),
+        handRef.current  ? Promise.resolve(handRef.current.detectForVideo(video, ts))  : Promise.resolve(null),
+      ]);
+
+      // ── Faces ──────────────────────────────────────────────────────
+      const faces: FacePrediction[] = faceResult?.detections?.map((d: MPModel) => {
+        const bb = d.boundingBox;
+        // MediaPipe coords are already in pixels for FaceDetector
+        return {
+          topLeft:     [bb.originX, bb.originY],
+          bottomRight: [bb.originX + bb.width, bb.originY + bb.height],
+          // 6 keypoints: right eye, left eye, nose, mouth, right ear, left ear (normalized)
+          landmarks: (d.keypoints ?? []).map((kp: MPModel) => [kp.x * vw, kp.y * vh]),
+          probability: d.categories?.[0]?.score ?? 1,
+        } satisfies FacePrediction;
+      }) ?? [];
+
+      const hasFace = faces.length > 0;
       setFacePresent(hasFace);
       onFaceStatus(hasFace);
-      let objects: ObjectPrediction[] = [];
-      if (hasFace) {
-        objects = await cocoRef.current.detect(video);
-        const hasPhone = objects.some(o => o.class === 'cell phone' && o.score > 0.4);
-        setPhoneDetected(hasPhone);
-        if (hasPhone) onPhoneDetected();
-      } else {
-        setPhoneDetected(false);
+
+      // ── Hands ──────────────────────────────────────────────────────
+      const hands: HandPrediction[] = [];
+      if (handResult?.landmarks) {
+        handResult.landmarks.forEach((lms: MPModel[], i: number) => {
+          const raw = handResult.handedness?.[i]?.[0]?.categoryName ?? 'Right';
+          // MediaPipe reports the mirror of what we see (camera is mirrored)
+          const handedness = (raw === 'Right' ? 'Left' : 'Right') as 'Left' | 'Right';
+          const kp: HandKeypoint[] = lms.map((lm: MPModel) => ({
+            x: lm.x * vw,
+            y: lm.y * vh,
+            z: lm.z,
+          }));
+
+          // Grip: fingertips (4,8,12,16,20) curled below their MCP knuckles (1,5,9,13,17)
+          const tipIdx = [4, 8, 12, 16, 20];
+          const mcpIdx = [1, 5, 9, 13, 17];
+          const curled = tipIdx.filter((ti, j) => kp[ti] && kp[mcpIdx[j]] && kp[ti].y > kp[mcpIdx[j]].y).length;
+          const gripDetected = curled >= 3;
+
+          hands.push({
+            keypoints: kp,
+            handedness,
+            score: handResult.handedness?.[i]?.[0]?.score,
+            gripDetected,
+          });
+        });
       }
-      setDetectionResult({ faces, objects });
+
+      // ── Phone detection ────────────────────────────────────────────
+      // Visible phone (COCO-SSD, threshold 0.3 to catch partial/angled views)
+      const hasPhoneVisible = objects.some((o: ObjectPrediction) => o.class === 'cell phone' && o.score > 0.3);
+      // Grip inference: gripping hand below top 30% of frame → suspected phone in lap
+      const hasPhoneGrip = hands.some(h => h.gripDetected && h.keypoints[0] && h.keypoints[0].y > vh * 0.3);
+
+      const hasPhone = hasPhoneVisible || hasPhoneGrip;
+      setPhoneDetected(hasPhone);
+      if (hasPhone) onPhoneDetected();
+
+      setDetectionResult({ faces, objects, hands });
     } catch (err) {
       console.warn('[FocusFlow] Detection error:', err);
     }

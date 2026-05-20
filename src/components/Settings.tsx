@@ -4,9 +4,11 @@ import type { AppSettings } from '../types';
 interface Props {
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
+  onSignOut?: () => void;
+  username?: string;
 }
 
-export function Settings({ settings, onSave }: Props) {
+export function Settings({ settings, onSave, onSignOut, username: accountUsername }: Props) {
   const [username, setUsername] = useState(settings.username);
   const [cameraEnabled, setCameraEnabled] = useState(settings.cameraEnabled);
   const [notificationsEnabled, setNotificationsEnabled] = useState(settings.notificationsEnabled);
@@ -114,6 +116,33 @@ export function Settings({ settings, onSave }: Props) {
           ))}
         </div>
       </section>
+
+      {/* Logged-in account info */}
+      {accountUsername && (
+        <div style={{
+          background: '#7c3aed15', border: '1px solid #7c3aed40',
+          borderRadius: '0.875rem', padding: '0.875rem 1.25rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: '1rem',
+        }}>
+          <div>
+            <div style={{ color: '#a78bfa', fontWeight: 700 }}>@{accountUsername}</div>
+            <div style={{ color: '#64748b', fontSize: '0.75rem' }}>Signed in · scores sync to leaderboard</div>
+          </div>
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              style={{
+                background: '#1e1e2e', border: '1px solid #3f3f5a',
+                borderRadius: '0.5rem', padding: '0.4rem 0.875rem',
+                color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer',
+              }}
+            >
+              Sign out
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Save button */}
       <button

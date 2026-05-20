@@ -1,4 +1,4 @@
-export type AppView = 'landing' | 'session' | 'summary' | 'history' | 'settings';
+export type AppView = 'landing' | 'session' | 'summary' | 'history' | 'settings' | 'leaderboard';
 
 export type DistractionType = 'tab_switch' | 'phone_detected' | 'camera_opted_out' | 'face_absent';
 

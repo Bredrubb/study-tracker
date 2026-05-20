@@ -7,9 +7,10 @@ interface Props {
 }
 
 const navItems: { view: AppView; label: string; icon: string }[] = [
-  { view: 'session', label: 'Session', icon: '⏱' },
-  { view: 'history', label: 'History', icon: '📊' },
-  { view: 'settings', label: 'Settings', icon: '⚙️' },
+  { view: 'session',     label: 'Session',     icon: '⏱' },
+  { view: 'history',     label: 'History',     icon: '📊' },
+  { view: 'leaderboard', label: 'Leaderboard', icon: '🏆' },
+  { view: 'settings',    label: 'Settings',    icon: '⚙️' },
 ];
 
 export function Navigation({ current, onNavigate, sessionActive }: Props) {

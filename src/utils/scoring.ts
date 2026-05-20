@@ -14,7 +14,7 @@ export function calculateScore(
 ): {
   score: number;
   scorePercent: number;
-  penaltyBreakdown: { tab_switch: number; phone_detected: number; camera_opted_out: number };
+  penaltyBreakdown: { tab_switch: number; phone_detected: number; camera_opted_out: number; face_absent: number };
 } {
   const durationMinutes = durationSeconds / 60;
 

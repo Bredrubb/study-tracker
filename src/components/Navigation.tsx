@@ -4,16 +4,18 @@ interface Props {
   current: AppView;
   onNavigate: (view: AppView) => void;
   sessionActive: boolean;
+  pendingFriendRequests?: number;
 }
 
 const navItems: { view: AppView; label: string; icon: string }[] = [
-  { view: 'session',     label: 'Session',     icon: '⏱' },
-  { view: 'history',     label: 'History',     icon: '📊' },
-  { view: 'leaderboard', label: 'Leaderboard', icon: '🏆' },
-  { view: 'settings',    label: 'Settings',    icon: '⚙️' },
+  { view: 'session',     label: 'Session',     icon: '⏱'  },
+  { view: 'history',     label: 'History',     icon: '📊'  },
+  { view: 'leaderboard', label: 'Leaderboard', icon: '🏆'  },
+  { view: 'friends',     label: 'Friends',     icon: '👥'  },
+  { view: 'settings',    label: 'Settings',    icon: '⚙️'  },
 ];
 
-export function Navigation({ current, onNavigate, sessionActive }: Props) {
+export function Navigation({ current, onNavigate, sessionActive, pendingFriendRequests = 0 }: Props) {
   return (
     <nav style={{
       position: 'fixed',
@@ -28,31 +30,34 @@ export function Navigation({ current, onNavigate, sessionActive }: Props) {
     }}>
       <div style={{
         display: 'flex',
-        gap: '0.25rem',
+        gap: '0.2rem',
         background: '#13131a',
         border: '1px solid #1e1e2e',
         borderRadius: '1.5rem',
         padding: '0.375rem',
       }}>
         {navItems.map(({ view, label, icon }) => {
-          const isActive = current === view || (view === 'session' && current === 'summary');
+          const isActive   = current === view || (view === 'session' && current === 'summary');
           const isDisabled = sessionActive && view !== 'session';
+          const showBadge  = view === 'friends' && pendingFriendRequests > 0 && !isDisabled;
+
           return (
             <button
               key={view}
               onClick={() => !isDisabled && onNavigate(view)}
               disabled={isDisabled}
               style={{
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.5rem 1.1rem',
+                gap: '0.35rem',
+                padding: '0.5rem 0.9rem',
                 borderRadius: '1.25rem',
                 border: 'none',
                 cursor: isDisabled ? 'not-allowed' : 'pointer',
                 background: isActive ? '#7c3aed' : 'transparent',
                 color: isActive ? '#fff' : isDisabled ? '#3f3f5a' : '#94a3b8',
-                fontSize: '0.875rem',
+                fontSize: '0.85rem',
                 fontWeight: isActive ? 600 : 400,
                 transition: 'all 0.2s',
                 opacity: isDisabled ? 0.4 : 1,
@@ -60,6 +65,29 @@ export function Navigation({ current, onNavigate, sessionActive }: Props) {
             >
               <span>{icon}</span>
               <span>{label}</span>
+
+              {/* Pending badge */}
+              {showBadge && (
+                <span style={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  background: '#ef4444',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  minWidth: '16px',
+                  height: '16px',
+                  fontSize: '0.6rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  padding: '0 3px',
+                  lineHeight: 1,
+                }}>
+                  {pendingFriendRequests > 9 ? '9+' : pendingFriendRequests}
+                </span>
+              )}
             </button>
           );
         })}

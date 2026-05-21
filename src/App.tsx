@@ -4,6 +4,7 @@ import { getSettings, saveSettings, getSessions, saveSession, clearSessions } fr
 import { calculateScore } from './utils/scoring';
 import { supabase } from './lib/supabase';
 import { useAuth } from './hooks/useAuth';
+import { useFriends } from './hooks/useFriends';
 import { LandingPage } from './components/LandingPage';
 import { ActiveSession } from './components/ActiveSession';
 import { SessionSummary } from './components/SessionSummary';
@@ -12,6 +13,7 @@ import { Settings } from './components/Settings';
 import { Navigation } from './components/Navigation';
 import { AuthPage } from './components/AuthPage';
 import { Leaderboard } from './components/Leaderboard';
+import { Friends } from './components/Friends';
 
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -19,6 +21,7 @@ function uid() {
 
 export default function App() {
   const { user, profile, loading: authLoading, signUp, signIn, signOut } = useAuth();
+  const friendsHook = useFriends(user?.id);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
 
   const [view,          setView]          = useState<AppView>('landing');
@@ -70,15 +73,15 @@ export default function App() {
     // Also sync to Supabase if logged in
     if (user) {
       await supabase.from('study_sessions').insert({
-        user_id:       user.id,
-        username:      profile?.username ?? settings.username,
-        duration:      elapsed,
+        user_id:        user.id,
+        username:       profile?.username ?? settings.username,
+        duration:       elapsed,
         score,
-        score_percent: scorePercent,
-        distractions:  distractions,
+        score_percent:  scorePercent,
+        distractions:   distractions,
         camera_enabled: cameraGranted,
-        started_at:    new Date(now - elapsed * 1000).toISOString(),
-        ended_at:      new Date(now).toISOString(),
+        started_at:     new Date(now - elapsed * 1000).toISOString(),
+        ended_at:       new Date(now).toISOString(),
       });
     }
   }, [user, profile, settings.username]);
@@ -103,6 +106,7 @@ export default function App() {
   }, [view, lastSession]);
 
   const sessionActive = view === 'session';
+  const currentUsername = profile?.username ?? settings.username;
 
   // Show auth page if not logged in
   if (!authLoading && !user) {
@@ -116,7 +120,6 @@ export default function App() {
           onAuth={handleAuth}
           onToggle={() => setAuthMode(m => m === 'signin' ? 'signup' : 'signin')}
         />
-
       </div>
     );
   }
@@ -127,13 +130,16 @@ export default function App() {
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     }}>
       {view === 'landing' && (
-        <LandingPage settings={{ ...settings, username: profile?.username ?? settings.username }} onStart={handleStartSession} />
+        <LandingPage
+          settings={{ ...settings, username: currentUsername }}
+          onStart={handleStartSession}
+        />
       )}
       {view === 'session' && sessionConfig && (
         <ActiveSession
           duration={sessionConfig.duration}
           cameraEnabled={sessionConfig.cameraEnabled}
-          settings={{ ...settings, username: profile?.username ?? settings.username }}
+          settings={{ ...settings, username: currentUsername }}
           onSessionEnd={handleSessionEnd}
         />
       )}
@@ -148,14 +154,27 @@ export default function App() {
         <SessionHistory sessions={sessions} onClear={handleClearHistory} />
       )}
       {view === 'leaderboard' && (
-        <Leaderboard currentUsername={profile?.username ?? settings.username} />
+        <Leaderboard currentUsername={currentUsername} myUserId={user?.id} />
+      )}
+      {view === 'friends' && (
+        <Friends {...friendsHook} />
       )}
       {view === 'settings' && (
-        <Settings settings={settings} onSave={handleSaveSettings} onSignOut={signOut} username={profile?.username} />
+        <Settings
+          settings={settings}
+          onSave={handleSaveSettings}
+          onSignOut={signOut}
+          username={profile?.username}
+        />
       )}
 
       {view !== 'landing' && !authLoading && (
-        <Navigation current={view} onNavigate={handleNavigate} sessionActive={sessionActive} />
+        <Navigation
+          current={view}
+          onNavigate={handleNavigate}
+          sessionActive={sessionActive}
+          pendingFriendRequests={friendsHook.incomingCount}
+        />
       )}
     </div>
   );

@@ -30,3 +30,11 @@ export interface LeaderboardEntry {
   avg_score_percent: number; // 0–1
   session_count: number;
 }
+
+export interface FriendshipRow {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+}

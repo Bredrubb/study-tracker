@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { AppSettings } from '../types';
 import type { PendingRequest } from '../hooks/useFriends';
+import { StudyHistoryChart } from './StudyHistoryChart';
 
 interface SessionRow {
   score: number;
@@ -339,34 +340,8 @@ export function ProfilePage({
           </div>
         </Card>
 
-        {/* ── Monthly history ───────────────────────────────────────────── */}
-        {monthStats.length > 0 && (
-          <Card>
-            <SectionLabel text="Monthly History" />
-            {monthStats.map((m, i) => (
-              <div key={m.monthKey} style={{
-                display: 'flex', alignItems: 'center', gap: '0.75rem',
-                padding: '0.65rem 0',
-                borderBottom: i < monthStats.length - 1 ? '1px solid #1e1e2e' : 'none',
-              }}>
-                <div style={{ width: 22, textAlign: 'center', fontSize: '1rem', flexShrink: 0 }}>
-                  {m.rank.icon || '·'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: m.rank.icon ? m.rank.color : '#94a3b8', fontSize: '0.82rem', fontWeight: 600 }}>
-                    {m.monthLabel}
-                  </div>
-                  <div style={{ color: '#475569', fontSize: '0.7rem' }}>
-                    {m.sessionCount} session{m.sessionCount !== 1 ? 's' : ''} · avg {Math.round(m.avgScorePercent * 100)}%
-                  </div>
-                </div>
-                <div style={{ color: '#a78bfa', fontWeight: 700, fontSize: '0.9rem', flexShrink: 0 }}>
-                  {fmtMins(m.totalMinutes)}
-                </div>
-              </div>
-            ))}
-          </Card>
-        )}
+        {/* ── Study history chart ───────────────────────────────────────── */}
+        <StudyHistoryChart sessions={sessions} />
 
         {/* ── Own profile only ─────────────────────────────────────────── */}
         {isOwnProfile && (

@@ -8,6 +8,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 export interface Profile {
   id: string;
   username: string;
+  avatar_url: string | null;
   created_at: string;
 }
 

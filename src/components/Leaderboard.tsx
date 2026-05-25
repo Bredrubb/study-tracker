@@ -5,10 +5,12 @@ import type { LeaderboardEntry } from '../lib/supabase';
 interface Props {
   currentUsername?: string;
   myUserId?: string;
+  onViewProfile?: (userId: string) => void;
 }
 
 interface RankedEntry extends LeaderboardEntry {
   rank: RankInfo;
+  user_id: string;
 }
 
 interface RankInfo {
@@ -17,8 +19,8 @@ interface RankInfo {
   icon: string;
 }
 
-function getRank(totalScoreMinutes: number): RankInfo {
-  const h = totalScoreMinutes / 60;
+function getRank(mins: number): RankInfo {
+  const h = mins / 60;
   if (h >= 100) return { label: 'Diamond', color: '#67e8f9', icon: '💎' };
   if (h >= 50)  return { label: 'Gold',    color: '#fbbf24', icon: '🥇' };
   if (h >= 30)  return { label: 'Silver',  color: '#c0c0c0', icon: '🥈' };
@@ -32,7 +34,7 @@ function monthStart(): string {
 }
 
 function daysUntilReset(): number {
-  const now = new Date();
+  const now  = new Date();
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return Math.ceil((next.getTime() - now.getTime()) / 86_400_000);
 }
@@ -48,21 +50,22 @@ function fmtMins(mins: number): string {
 }
 
 function aggregateSessions(
-  data: { username: string; score: number; score_percent: number }[]
+  data: { username: string; user_id: string; score: number; score_percent: number }[]
 ): RankedEntry[] {
-  const map = new Map<string, { total: number; scoreSum: number; count: number }>();
+  const map = new Map<string, { total: number; scoreSum: number; count: number; userId: string }>();
   for (const row of data) {
-    const e = map.get(row.username) ?? { total: 0, scoreSum: 0, count: 0 };
+    const e = map.get(row.username) ?? { total: 0, scoreSum: 0, count: 0, userId: row.user_id };
     e.total    += row.score;
     e.scoreSum += row.score_percent;
     e.count    += 1;
     map.set(row.username, e);
   }
   return Array.from(map.entries())
-    .map(([username, { total, scoreSum, count }]) => {
+    .map(([username, { total, scoreSum, count, userId }]) => {
       const rounded = Math.round(total);
       return {
         username,
+        user_id:           userId,
         total_score:       rounded,
         avg_score_percent: scoreSum / count,
         session_count:     count,
@@ -79,7 +82,7 @@ const RANK_LEGEND = [
   { icon: '🥉', label: 'Bronze',  color: '#cd7f32', req: '20h'  },
 ];
 
-export function Leaderboard({ currentUsername, myUserId }: Props) {
+export function Leaderboard({ currentUsername, myUserId, onViewProfile }: Props) {
   const [tab,     setTab]     = useState<'global' | 'friends'>('global');
   const [entries, setEntries] = useState<RankedEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +91,7 @@ export function Leaderboard({ currentUsername, myUserId }: Props) {
   const loadGlobal = async () => {
     const { data, error: err } = await supabase
       .from('study_sessions')
-      .select('username, score, score_percent')
+      .select('username, user_id, score, score_percent')
       .gte('started_at', monthStart());
     if (err) { setError(err.message); return; }
     setEntries(aggregateSessions(data ?? []));
@@ -110,7 +113,7 @@ export function Leaderboard({ currentUsername, myUserId }: Props) {
 
     const { data, error: err } = await supabase
       .from('study_sessions')
-      .select('username, score, score_percent, user_id')
+      .select('username, user_id, score, score_percent')
       .in('user_id', allIds)
       .gte('started_at', monthStart());
 
@@ -126,14 +129,9 @@ export function Leaderboard({ currentUsername, myUserId }: Props) {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [tab, myUserId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [tab, myUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const posLabel = (i: number) => {
-    if (i === 0) return '🥇';
-    if (i === 1) return '🥈';
-    if (i === 2) return '🥉';
-    return `#${i + 1}`;
-  };
+  const posLabel = (i: number) => ['🥇', '🥈', '🥉'][i] ?? `#${i + 1}`;
 
   return (
     <div style={{ minHeight: '100vh', padding: '2rem 1rem 6rem' }}>
@@ -141,25 +139,16 @@ export function Leaderboard({ currentUsername, myUserId }: Props) {
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <h1 style={{ color: '#f1f5f9', fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>
-            🏆 Leaderboard
-          </h1>
+          <h1 style={{ color: '#f1f5f9', fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>🏆 Leaderboard</h1>
           <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '0.4rem' }}>
             {currentMonthName()} · resets in {daysUntilReset()} day{daysUntilReset() !== 1 ? 's' : ''}
           </p>
         </div>
 
         {/* Rank legend */}
-        <div style={{
-          display: 'flex', gap: '0.4rem', justifyContent: 'center',
-          marginBottom: '1.5rem', flexWrap: 'wrap',
-        }}>
+        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           {RANK_LEGEND.map(r => (
-            <div key={r.label} style={{
-              background: '#13131a', border: `1px solid ${r.color}35`,
-              borderRadius: '0.75rem', padding: '0.3rem 0.7rem',
-              display: 'flex', alignItems: 'center', gap: '0.3rem',
-            }}>
+            <div key={r.label} style={{ background: '#13131a', border: `1px solid ${r.color}35`, borderRadius: '0.75rem', padding: '0.3rem 0.7rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
               <span style={{ fontSize: '0.85rem' }}>{r.icon}</span>
               <span style={{ color: r.color, fontSize: '0.72rem', fontWeight: 700 }}>{r.label}</span>
               <span style={{ color: '#475569', fontSize: '0.68rem' }}>{r.req}+</span>
@@ -168,124 +157,67 @@ export function Leaderboard({ currentUsername, myUserId }: Props) {
         </div>
 
         {/* Tab toggle */}
-        <div style={{
-          display: 'flex', background: '#13131a',
-          border: '1px solid #1e1e2e', borderRadius: '0.875rem',
-          padding: '0.3rem', marginBottom: '1.25rem',
-        }}>
+        <div style={{ display: 'flex', background: '#13131a', border: '1px solid #1e1e2e', borderRadius: '0.875rem', padding: '0.3rem', marginBottom: '1.25rem' }}>
           {(['global', 'friends'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                flex: 1, padding: '0.55rem',
-                background: tab === t ? '#7c3aed' : 'transparent',
-                border: 'none', borderRadius: '0.625rem',
-                color: tab === t ? '#fff' : '#94a3b8',
-                fontWeight: tab === t ? 700 : 400,
-                fontSize: '0.875rem', cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '0.55rem', background: tab === t ? '#7c3aed' : 'transparent', border: 'none', borderRadius: '0.625rem', color: tab === t ? '#fff' : '#94a3b8', fontWeight: tab === t ? 700 : 400, fontSize: '0.875rem', cursor: 'pointer', transition: 'all 0.2s' }}>
               {t === 'global' ? '🌍 Global' : '👥 Friends'}
             </button>
           ))}
         </div>
 
         {/* Refresh */}
-        <button
-          onClick={load}
-          style={{
-            display: 'block', margin: '0 auto 1.5rem',
-            background: '#13131a', border: '1px solid #1e1e2e',
-            borderRadius: '0.625rem', padding: '0.5rem 1.25rem',
-            color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer',
-          }}
-        >
+        <button onClick={load} style={{ display: 'block', margin: '0 auto 1.5rem', background: '#13131a', border: '1px solid #1e1e2e', borderRadius: '0.625rem', padding: '0.5rem 1.25rem', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer' }}>
           🔄 Refresh
         </button>
 
-        {/* States */}
-        {loading && (
-          <div style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>
-            Loading…
-          </div>
-        )}
+        {loading && <div style={{ textAlign: 'center', color: '#64748b', padding: '3rem' }}>Loading…</div>}
 
         {error && (
-          <div style={{
-            background: '#ef444415', border: '1px solid #ef444440',
-            borderRadius: '0.75rem', padding: '0.75rem', color: '#fca5a5',
-            fontSize: '0.85rem', marginBottom: '1rem',
-          }}>
+          <div style={{ background: '#ef444415', border: '1px solid #ef444440', borderRadius: '0.75rem', padding: '0.75rem', color: '#fca5a5', fontSize: '0.85rem', marginBottom: '1rem' }}>
             ⚠️ {error}
           </div>
         )}
 
         {!loading && !error && entries.length === 0 && (
           <div style={{ textAlign: 'center', color: '#64748b', padding: '3rem', fontSize: '0.9rem' }}>
-            {tab === 'friends'
-              ? 'No friend sessions this month yet. Add friends via the Friends tab!'
-              : 'No sessions this month yet — be the first on the board!'}
+            {tab === 'friends' ? 'Add friends to see them here!' : 'No sessions this month — be the first!'}
           </div>
         )}
 
-        {/* Entries */}
         {!loading && entries.map((entry, i) => {
-          const isMe = entry.username === currentUsername;
+          const isMe      = entry.username === currentUsername;
           const rankColor = entry.rank.color;
-          const hasRank = !!entry.rank.icon;
+          const canClick  = !!onViewProfile;
 
           return (
-            <div
-              key={entry.username}
-              style={{
-                background: isMe ? '#7c3aed12' : '#13131a',
-                border: `1px solid ${isMe ? '#7c3aed55' : hasRank ? `${rankColor}25` : '#1e1e2e'}`,
-                borderRadius: '0.875rem',
-                padding: '1rem 1.25rem',
-                marginBottom: '0.75rem',
-                display: 'flex', alignItems: 'center', gap: '1rem',
-              }}
-            >
+            <div key={entry.username} style={{ background: isMe ? '#7c3aed12' : '#13131a', border: `1px solid ${isMe ? '#7c3aed55' : entry.rank.icon ? `${rankColor}25` : '#1e1e2e'}`, borderRadius: '0.875rem', padding: '1rem 1.25rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+
               {/* Position */}
-              <div style={{
-                fontSize: i < 3 ? '1.4rem' : '0.95rem',
-                fontWeight: 700, color: '#64748b',
-                minWidth: '2.25rem', textAlign: 'center',
-              }}>
+              <div style={{ fontSize: i < 3 ? '1.4rem' : '0.95rem', fontWeight: 700, color: '#64748b', minWidth: '2.25rem', textAlign: 'center' }}>
                 {posLabel(i)}
               </div>
 
-              {/* Name + meta */}
+              {/* Name */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                  {entry.rank.icon && (
-                    <span style={{ fontSize: '0.85rem' }}>{entry.rank.icon}</span>
-                  )}
-                  <span style={{ color: rankColor, fontWeight: 700, fontSize: '1rem' }}>
+                  {entry.rank.icon && <span style={{ fontSize: '0.85rem' }}>{entry.rank.icon}</span>}
+                  <span
+                    onClick={() => canClick && onViewProfile(entry.user_id)}
+                    style={{ color: rankColor, fontWeight: 700, fontSize: '1rem', cursor: canClick ? 'pointer' : 'default', textDecoration: canClick ? 'underline' : 'none', textDecorationColor: `${rankColor}60` }}
+                  >
                     {entry.username}
                   </span>
-                  {isMe && (
-                    <span style={{ fontSize: '0.68rem', color: '#7c3aed', fontWeight: 600 }}>(you)</span>
-                  )}
+                  {isMe && <span style={{ fontSize: '0.68rem', color: '#7c3aed', fontWeight: 600 }}>(you)</span>}
                 </div>
                 <div style={{ color: '#475569', fontSize: '0.72rem', marginTop: '0.15rem' }}>
-                  {entry.session_count} session{entry.session_count !== 1 ? 's' : ''}
-                  {' · '}avg {Math.round(entry.avg_score_percent * 100)}% score
-                  {entry.rank.label && (
-                    <span style={{ color: rankColor, marginLeft: '0.4rem' }}>
-                      · {entry.rank.label}
-                    </span>
-                  )}
+                  {entry.session_count} session{entry.session_count !== 1 ? 's' : ''} · avg {Math.round(entry.avg_score_percent * 100)}%
+                  {entry.rank.label && <span style={{ color: rankColor, marginLeft: '0.4rem' }}>· {entry.rank.label}</span>}
                 </div>
               </div>
 
               {/* Score */}
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ color: '#a78bfa', fontWeight: 800, fontSize: '1.1rem' }}>
-                  {fmtMins(entry.total_score)}
-                </div>
+                <div style={{ color: '#a78bfa', fontWeight: 800, fontSize: '1.1rem' }}>{fmtMins(entry.total_score)}</div>
                 <div style={{ color: '#475569', fontSize: '0.68rem' }}>this month</div>
               </div>
             </div>

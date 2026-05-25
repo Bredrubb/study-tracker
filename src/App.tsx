@@ -9,11 +9,11 @@ import { LandingPage } from './components/LandingPage';
 import { ActiveSession } from './components/ActiveSession';
 import { SessionSummary } from './components/SessionSummary';
 import { SessionHistory } from './components/SessionHistory';
-import { Settings } from './components/Settings';
 import { Navigation } from './components/Navigation';
 import { AuthPage } from './components/AuthPage';
 import { Leaderboard } from './components/Leaderboard';
 import { Friends } from './components/Friends';
+import { ProfilePage } from './components/ProfilePage';
 
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -24,11 +24,13 @@ export default function App() {
   const friendsHook = useFriends(user?.id);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
 
-  const [view,          setView]          = useState<AppView>('landing');
-  const [settings,      setSettings]      = useState<AppSettings>(getSettings);
-  const [sessions,      setSessions]      = useState<SessionData[]>(getSessions);
-  const [lastSession,   setLastSession]   = useState<SessionData | null>(null);
-  const [sessionConfig, setSessionConfig] = useState<{ duration: number; cameraEnabled: boolean } | null>(null);
+  const [view,             setView]             = useState<AppView>('landing');
+  const [settings,         setSettings]         = useState<AppSettings>(getSettings);
+  const [sessions,         setSessions]         = useState<SessionData[]>(getSessions);
+  const [lastSession,      setLastSession]       = useState<SessionData | null>(null);
+  const [sessionConfig,    setSessionConfig]     = useState<{ duration: number; cameraEnabled: boolean } | null>(null);
+  const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
+  const [previousView,     setPreviousView]      = useState<AppView>('leaderboard');
 
   const handleAuth = useCallback(async (username: string, password: string, isSignUp: boolean) => {
     if (isSignUp) return signUp('', password, username);
@@ -46,16 +48,14 @@ export default function App() {
     cameraGranted: boolean,
   ) => {
     const now = Date.now();
-    const { score, scorePercent, penaltyBreakdown } = calculateScore(
-      elapsed, distractions, cameraGranted,
-    );
+    const { score, scorePercent, penaltyBreakdown } = calculateScore(elapsed, distractions, cameraGranted);
 
     const session: SessionData = {
       id: uid(),
-      username: profile?.username ?? settings.username,
-      startTime: now - elapsed * 1000,
-      endTime: now,
-      duration: elapsed,
+      username:      profile?.username ?? settings.username,
+      startTime:     now - elapsed * 1000,
+      endTime:       now,
+      duration:      elapsed,
       distractions,
       cameraEnabled: cameraGranted,
       score,
@@ -63,14 +63,12 @@ export default function App() {
       penaltyBreakdown,
     };
 
-    // Always save locally
     saveSession(session);
     setSessions(getSessions());
     setLastSession(session);
     setSessionConfig(null);
     setView('summary');
 
-    // Also sync to Supabase if logged in
     if (user) {
       await supabase.from('study_sessions').insert({
         user_id:        user.id,
@@ -78,7 +76,7 @@ export default function App() {
         duration:       elapsed,
         score,
         score_percent:  scorePercent,
-        distractions:   distractions,
+        distractions,
         camera_enabled: cameraGranted,
         started_at:     new Date(now - elapsed * 1000).toISOString(),
         ended_at:       new Date(now).toISOString(),
@@ -102,19 +100,29 @@ export default function App() {
       setView(lastSession ? 'summary' : 'landing');
       return;
     }
+    if (target === 'profile') {
+      setViewingProfileId(null); // always own profile from nav
+    }
     setView(target);
   }, [view, lastSession]);
 
-  const sessionActive = view === 'session';
-  const currentUsername = profile?.username ?? settings.username;
+  const handleViewProfile = useCallback((userId: string) => {
+    setPreviousView(view);
+    setViewingProfileId(userId);
+    setView('profile');
+  }, [view]);
 
-  // Show auth page if not logged in
+  const handleProfileBack = useCallback(() => {
+    setViewingProfileId(null);
+    setView(previousView);
+  }, [previousView]);
+
+  const sessionActive    = view === 'session';
+  const currentUsername  = profile?.username ?? settings.username;
+
   if (!authLoading && !user) {
     return (
-      <div style={{
-        minHeight: '100vh', background: '#0a0a0f', color: '#f1f5f9',
-        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      }}>
+      <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#f1f5f9', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
         <AuthPage
           mode={authMode}
           onAuth={handleAuth}
@@ -125,15 +133,9 @@ export default function App() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0a0a0f', color: '#f1f5f9',
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    }}>
+    <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#f1f5f9', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       {view === 'landing' && (
-        <LandingPage
-          settings={{ ...settings, username: currentUsername }}
-          onStart={handleStartSession}
-        />
+        <LandingPage settings={{ ...settings, username: currentUsername }} onStart={handleStartSession} />
       )}
       {view === 'session' && sessionConfig && (
         <ActiveSession
@@ -144,27 +146,29 @@ export default function App() {
         />
       )}
       {view === 'summary' && lastSession && (
-        <SessionSummary
-          session={lastSession}
-          onNewSession={() => setView('landing')}
-          onViewHistory={() => setView('history')}
-        />
+        <SessionSummary session={lastSession} onNewSession={() => setView('landing')} onViewHistory={() => setView('history')} />
       )}
       {view === 'history' && (
         <SessionHistory sessions={sessions} onClear={handleClearHistory} />
       )}
       {view === 'leaderboard' && (
-        <Leaderboard currentUsername={currentUsername} myUserId={user?.id} />
+        <Leaderboard currentUsername={currentUsername} myUserId={user?.id} onViewProfile={handleViewProfile} />
       )}
       {view === 'friends' && (
-        <Friends {...friendsHook} />
+        <Friends {...friendsHook} onViewProfile={handleViewProfile} />
       )}
-      {view === 'settings' && (
-        <Settings
-          settings={settings}
-          onSave={handleSaveSettings}
+      {view === 'profile' && user && (
+        <ProfilePage
+          viewingUserId={viewingProfileId}
+          myUserId={user.id}
+          myUsername={currentUsername}
           onSignOut={signOut}
-          username={profile?.username}
+          onBack={viewingProfileId && viewingProfileId !== user.id ? handleProfileBack : undefined}
+          settings={settings}
+          onSaveSettings={handleSaveSettings}
+          pendingRequests={friendsHook.pending}
+          onAcceptRequest={friendsHook.acceptRequest}
+          onDeclineRequest={friendsHook.declineRequest}
         />
       )}
 

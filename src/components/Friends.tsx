@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import type { UseFriendsReturn } from '../hooks/useFriends';
 
-type Props = UseFriendsReturn;
+type Props = UseFriendsReturn & {
+  onViewProfile?: (userId: string) => void;
+};
 
 export function Friends({
   friends, pending, loading,
   sendRequest, acceptRequest, declineRequest, removeFriend,
+  onViewProfile,
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const [sendMsg, setSendMsg] = useState<{ text: string; isError: boolean } | null>(null);
@@ -165,7 +168,10 @@ export function Friends({
               display: 'flex', alignItems: 'center', gap: '0.75rem',
               marginBottom: '0.5rem',
             }}>
-              <span style={{ flex: 1, color: '#f1f5f9', fontWeight: 600 }}>
+              <span
+                onClick={() => onViewProfile?.(f.user_id)}
+                style={{ flex: 1, color: '#f1f5f9', fontWeight: 600, cursor: onViewProfile ? 'pointer' : 'default', textDecoration: onViewProfile ? 'underline' : 'none', textDecorationColor: '#ffffff30' }}
+              >
                 👤 {f.username}
               </span>
               <button

@@ -12,7 +12,7 @@ const navItems: { view: AppView; label: string; icon: string }[] = [
   { view: 'history',     label: 'History',     icon: '📊'  },
   { view: 'leaderboard', label: 'Leaderboard', icon: '🏆'  },
   { view: 'friends',     label: 'Friends',     icon: '👥'  },
-  { view: 'settings',    label: 'Settings',    icon: '⚙️'  },
+  { view: 'profile',     label: 'Profile',     icon: '👤'  },
 ];
 
 export function Navigation({ current, onNavigate, sessionActive, pendingFriendRequests = 0 }: Props) {

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { AppSettings } from '../types';
 import type { PendingRequest } from '../hooks/useFriends';
-import { StudyHistoryChart } from './StudyHistoryChart';
 
 interface SessionRow {
   score: number;
@@ -340,8 +339,6 @@ export function ProfilePage({
           </div>
         </Card>
 
-        {/* ── Study history chart ───────────────────────────────────────── */}
-        <StudyHistoryChart sessions={sessions} />
 
         {/* ── Own profile only ─────────────────────────────────────────── */}
         {isOwnProfile && (
